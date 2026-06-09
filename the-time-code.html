@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE TIME CODE — Temporal Navigation System</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* =============================================
+   GLOBAL RESET & CSS VARIABLES
+   ============================================= */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --neon-blue: #00d4ff;
+  --neon-violet: #8b00ff;
+  --neon-cyan: #00ffea;
+  --neon-pink: #ff00c8;
+  --neon-gold: #ffd700;
+  --dark-bg: #020408;
+  --panel-bg: rgba(0, 10, 30, 0.75);
+  --panel-border: rgba(0, 212, 255, 0.25);
+  --glass-bg: rgba(0, 212, 255, 0.05);
+  --text-primary: #e8f4ff;
+  --text-dim: rgba(0, 212, 255, 0.6);
+  --glow-blue: 0 0 20px rgba(0, 212, 255, 0.5), 0 0 40px rgba(0, 212, 255, 0.2);
+  --glow-violet: 0 0 20px rgba(139, 0, 255, 0.5), 0 0 40px rgba(139, 0, 255, 0.2);
+  --glow-cyan: 0 0 10px rgba(0, 255, 234, 0.8), 0 0 30px rgba(0, 255, 234, 0.3);
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--dark-bg);
+  color: var(--text-primary);
+  font-family: 'Rajdhani', sans-serif;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+/* =============================================
+   THREE.JS CANVAS (BACKGROUND LAYER)
+   ============================================= */
+#three-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+}
+
+/* =============================================
+   SCANLINE OVERLAY
+   ============================================= */
+#scanlines {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  animation: scanroll 8s linear infinite;
+}
+@keyframes scanroll {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100px; }
+}
+
+/* =============================================
+   VIGNETTE
+   ============================================= */
+#vignette {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.85) 100%);
+}
+
+/* =============================================
+   MAIN UI LAYER
+   ============================================= */
+#ui-layer {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+}
+
+/* =============================================
+   HEADER
+   ============================================= */
+#header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.header-logo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.logo-title {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(14px, 2vw, 22px);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: var(--neon-blue);
+  text-shadow: var(--glow-blue);
+  text-transform: uppercase;
+}
+.logo-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(8px, 1vw, 11px);
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+}
+
+.header-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--neon-cyan);
+  box-shadow: var(--glow-cyan);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.status-dot.orange { background: #ff8c00; box-shadow: 0 0 10px rgba(255,140,0,0.8); }
+.status-dot.red { background: #ff003c; box-shadow: 0 0 10px rgba(255,0,60,0.8); }
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.7); }
+}
+
+/* =============================================
+   SIDE PANELS
+   ============================================= */
+.side-panel {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: clamp(140px, 15vw, 200px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 10;
+}
+#left-panel { left: 20px; }
+#right-panel { right: 20px; }
+
+.data-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 12px;
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.data-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: linear-gradient(to bottom, var(--neon-blue), var(--neon-violet));
+}
+.data-card:hover {
+  border-color: rgba(0,212,255,0.5);
+  box-shadow: var(--glow-blue);
+}
+.card-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.card-value {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(11px, 1.2vw, 14px);
+  color: var(--neon-cyan);
+  font-weight: 700;
+  text-shadow: var(--glow-cyan);
+}
+.card-bar {
+  margin-top: 8px;
+  height: 3px;
+  background: rgba(0,212,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.card-bar-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--neon-blue), var(--neon-cyan));
+  border-radius: 2px;
+  animation: bar-pulse 3s ease-in-out infinite;
+}
+@keyframes bar-pulse {
+  0%,100% { width: 65%; }
+  50% { width: 90%; }
+}
+.mini-chart {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 24px;
+}
+.mini-bar {
+  flex: 1;
+  background: rgba(0,212,255,0.3);
+  border-radius: 1px;
+  animation: mini-anim var(--delay, 1.5s) ease-in-out infinite;
+}
+@keyframes mini-anim {
+  0%,100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* =============================================
+   CENTER CONTROL PANEL
+   ============================================= */
+#center-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 600px;
+}
+
+/* Frame decoration */
+.panel-frame {
+  width: 100%;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 28px 32px;
+  backdrop-filter: blur(20px);
+  position: relative;
+  box-shadow: var(--glow-blue), inset 0 0 60px rgba(0,20,60,0.5);
+}
+.panel-frame::before,
+.panel-frame::after {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  border-color: var(--neon-cyan);
+  border-style: solid;
+}
+.panel-frame::before {
+  top: -1px; left: -1px;
+  border-width: 2px 0 0 2px;
+  box-shadow: -3px -3px 8px rgba(0,255,234,0.3);
+}
+.panel-frame::after {
+  bottom: -1px; right: -1px;
+  border-width: 0 2px 2px 0;
+  box-shadow: 3px 3px 8px rgba(0,255,234,0.3);
+}
+
+.panel-title {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(11px, 1.2vw, 14px);
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  text-align: center;
+  position: relative;
+}
+.panel-title::before {
+  content: '◈ ';
+  color: var(--neon-cyan);
+  font-size: 0.8em;
+}
+.panel-title::after {
+  content: ' ◈';
+  color: var(--neon-cyan);
+  font-size: 0.8em;
+}
+
+/* Time Input Area */
+.time-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.input-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.input-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.input-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.time-input {
+  background: rgba(0, 10, 30, 0.9);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 4px;
+  padding: 10px 14px;
+  color: var(--neon-cyan);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(13px, 1.4vw, 16px);
+  letter-spacing: 0.1em;
+  outline: none;
+  width: 100%;
+  transition: all 0.3s;
+  -webkit-appearance: none;
+}
+.time-input::-webkit-calendar-picker-indicator {
+  filter: invert(1) sepia(1) saturate(5) hue-rotate(175deg);
+  cursor: pointer;
+}
+.time-input:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: var(--glow-cyan), inset 0 0 20px rgba(0,255,234,0.05);
+  background: rgba(0, 20, 50, 0.95);
+}
+
+/* Coordinate display */
+.coord-display {
+  display: flex;
+  gap: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+}
+.coord-sep {
+  color: rgba(0,212,255,0.3);
+}
+
+/* Era selector */
+.era-selector {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.era-btn {
+  background: rgba(0,10,30,0.8);
+  border: 1px solid rgba(0,212,255,0.2);
+  border-radius: 3px;
+  padding: 6px 12px;
+  color: var(--text-dim);
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+}
+.era-btn:hover, .era-btn.active {
+  background: rgba(0,212,255,0.1);
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+/* =============================================
+   LAUNCH BUTTON
+   ============================================= */
+#launch-btn {
+  width: 100%;
+  padding: 18px;
+  background: linear-gradient(135deg, rgba(0,80,180,0.3), rgba(139,0,255,0.2));
+  border: 2px solid var(--neon-blue);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(12px, 1.4vw, 16px);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s;
+  box-shadow: var(--glow-blue);
+}
+#launch-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.15), transparent);
+  animation: shimmer 3s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+#launch-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 300%; height: 300%;
+  background: radial-gradient(circle, rgba(0,212,255,0.2) 0%, transparent 70%);
+  transition: transform 0.5s ease-out, opacity 0.5s;
+  opacity: 0;
+  border-radius: 50%;
+}
+#launch-btn:hover {
+  background: linear-gradient(135deg, rgba(0,120,255,0.4), rgba(139,0,255,0.3));
+  border-color: var(--neon-cyan);
+  box-shadow: var(--glow-cyan), 0 0 60px rgba(0,212,255,0.3);
+  transform: translateY(-1px);
+}
+#launch-btn:hover::after {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+#launch-btn:active { transform: translateY(1px); }
+#launch-btn.charging {
+  animation: charge-pulse 0.5s ease-in-out infinite;
+  border-color: var(--neon-violet);
+  box-shadow: var(--glow-violet), 0 0 80px rgba(139,0,255,0.5);
+}
+@keyframes charge-pulse {
+  0%,100% { box-shadow: var(--glow-violet), 0 0 40px rgba(139,0,255,0.4); }
+  50% { box-shadow: 0 0 40px rgba(139,0,255,0.8), 0 0 100px rgba(139,0,255,0.6); }
+}
+
+/* =============================================
+   BOTTOM TIMELINE
+   ============================================= */
+#timeline-bar {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.timeline-track {
+  position: relative;
+  height: 2px;
+  background: rgba(0,212,255,0.1);
+  border-radius: 1px;
+}
+.timeline-fill {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  background: linear-gradient(to right, var(--neon-violet), var(--neon-blue), var(--neon-cyan));
+  border-radius: 1px;
+  width: 0%;
+  transition: width 1.5s ease-out;
+  box-shadow: 0 0 8px rgba(0,212,255,0.8);
+}
+.timeline-cursor {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px; height: 10px;
+  background: var(--neon-cyan);
+  border-radius: 50%;
+  box-shadow: var(--glow-cyan);
+  animation: cursor-pulse 2s ease-in-out infinite;
+  transition: left 1.5s ease-out;
+}
+@keyframes cursor-pulse {
+  0%,100% { box-shadow: var(--glow-cyan); transform: translate(-50%, -50%) scale(1); }
+  50% { box-shadow: 0 0 20px rgba(0,255,234,0.9); transform: translate(-50%, -50%) scale(1.3); }
+}
+.timeline-markers {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 8px;
+  color: rgba(0,212,255,0.35);
+  letter-spacing: 0.1em;
+}
+
+/* =============================================
+   WARP TRANSITION OVERLAY
+   ============================================= */
+#warp-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background: radial-gradient(ellipse at center, rgba(0,20,80,0.95) 0%, rgba(0,0,0,0.98) 100%);
+  pointer-events: none;
+}
+#warp-overlay.active {
+  display: flex;
+}
+#warp-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+.warp-text {
+  z-index: 10;
+  font-family: 'Orbitron', monospace;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.warp-title {
+  font-size: clamp(18px, 3vw, 36px);
+  font-weight: 900;
+  color: var(--neon-cyan);
+  text-shadow: var(--glow-cyan);
+  letter-spacing: 0.4em;
+  animation: warp-flicker 0.2s ease-in-out infinite;
+}
+@keyframes warp-flicker {
+  0%,92%,100% { opacity: 1; }
+  95% { opacity: 0.7; }
+  97% { opacity: 1; }
+  99% { opacity: 0.5; }
+}
+.warp-coords {
+  font-size: clamp(10px, 1.2vw, 14px);
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+  animation: data-scroll 0.1s linear infinite;
+}
+@keyframes data-scroll {
+  0% { opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+.warp-progress {
+  width: 300px;
+  height: 3px;
+  background: rgba(0,212,255,0.1);
+  border-radius: 2px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+.warp-progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--neon-violet), var(--neon-cyan));
+  width: 0%;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(0,212,255,0.8);
+  transition: width 3s ease-in-out;
+}
+
+/* =============================================
+   ARRIVAL PANEL
+   ============================================= */
+#arrival-panel {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  z-index: 110;
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+  background: rgba(0, 5, 20, 0.92);
+  border: 1px solid var(--neon-cyan);
+  border-radius: 8px;
+  padding: 36px 40px;
+  backdrop-filter: blur(30px);
+  box-shadow: var(--glow-cyan), 0 0 100px rgba(0,212,255,0.2);
+  text-align: center;
+  max-width: 500px;
+  width: 90%;
+  transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#arrival-panel.active {
+  display: flex;
+  transform: translate(-50%, -50%) scale(1);
+}
+.arrival-era {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(24px, 4vw, 48px);
+  font-weight: 900;
+  color: var(--neon-cyan);
+  text-shadow: var(--glow-cyan);
+  letter-spacing: 0.2em;
+}
+.arrival-date {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(12px, 1.5vw, 18px);
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+}
+.arrival-desc {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(13px, 1.4vw, 16px);
+  color: rgba(200,230,255,0.7);
+  line-height: 1.6;
+  font-weight: 300;
+}
+.arrival-stats {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.stat-val {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(14px, 1.8vw, 20px);
+  font-weight: 700;
+  color: var(--neon-blue);
+  text-shadow: var(--glow-blue);
+}
+.stat-lbl {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+.return-btn {
+  padding: 12px 32px;
+  background: transparent;
+  border: 1px solid rgba(0,212,255,0.4);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  cursor: pointer;
+  transition: all 0.3s;
+  align-self: center;
+  text-transform: uppercase;
+}
+.return-btn:hover {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+/* =============================================
+   FLOATING PARTICLES (CSS)
+   ============================================= */
+.css-particle {
+  position: fixed;
+  pointer-events: none;
+  z-index: 3;
+  border-radius: 50%;
+  animation: float-up linear infinite;
+}
+@keyframes float-up {
+  0% { transform: translateY(100vh) scale(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 0.6; }
+  100% { transform: translateY(-10vh) scale(1.2); opacity: 0; }
+}
+
+/* =============================================
+   NOTIFICATION TOAST
+   ============================================= */
+#toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(60px);
+  z-index: 200;
+  background: rgba(0,20,60,0.9);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 10px 24px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--neon-cyan);
+  letter-spacing: 0.15em;
+  backdrop-filter: blur(10px);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* =============================================
+   RESPONSIVE
+   ============================================= */
+@media (max-width: 768px) {
+  .side-panel { display: none; }
+  #center-panel { max-width: 95vw; }
+  .panel-frame { padding: 20px 18px; }
+  #ui-layer { padding: 12px; }
+}
+@media (max-width: 480px) {
+  .input-row { flex-direction: column; }
+  .era-selector { flex-wrap: wrap; }
+}
+
+/* =============================================
+   GLITCH EFFECT (on init)
+   ============================================= */
+.glitch {
+  animation: glitch 0.3s ease-in-out;
+}
+@keyframes glitch {
+  0% { transform: translate(0); filter: hue-rotate(0deg); }
+  20% { transform: translate(-3px, 2px); filter: hue-rotate(90deg); }
+  40% { transform: translate(3px, -2px); filter: hue-rotate(180deg); }
+  60% { transform: translate(-2px, 3px); filter: hue-rotate(270deg); }
+  80% { transform: translate(2px, -1px); filter: hue-rotate(360deg); }
+  100% { transform: translate(0); filter: hue-rotate(0deg); }
+}
+
+/* =============================================
+   LAUNCH LOADING BAR
+   ============================================= */
+#launch-progress-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+}
+#launch-progress-wrap.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.launch-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+}
+#launch-progress-pct {
+  color: var(--neon-cyan);
+  font-weight: bold;
+  text-shadow: var(--glow-cyan);
+  transition: color 0.3s;
+}
+#launch-progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(0, 212, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+#launch-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--neon-violet), var(--neon-blue), var(--neon-cyan));
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.8), 0 0 16px rgba(0, 212, 255, 0.4);
+  transition: width 0.25s ease-out, background 0.5s;
+  position: relative;
+}
+#launch-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 20px; height: 100%;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.6));
+  border-radius: 2px;
+  animation: progress-shimmer 0.8s ease-in-out infinite;
+}
+@keyframes progress-shimmer {
+  0%,100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+#launch-progress-fill.danger {
+  background: linear-gradient(to right, #ff003c, #ff8c00, #ffd700);
+  box-shadow: 0 0 8px rgba(255, 60, 0, 0.9), 0 0 16px rgba(255, 140, 0, 0.4);
+}
+#launch-progress-fill.complete {
+  background: linear-gradient(to right, var(--neon-cyan), #ffffff);
+  box-shadow: 0 0 12px rgba(0, 255, 234, 1), 0 0 24px rgba(0, 255, 234, 0.6);
+}
+#launch-status-text {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  text-align: center;
+  min-height: 12px;
+  transition: color 0.3s;
+}
+
+/* corner decorations */
+.corner-deco {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+  width: 60px; height: 60px;
+}
+.corner-deco svg { width: 100%; height: 100%; }
+#corner-tl { top: 0; left: 0; }
+#corner-tr { top: 0; right: 0; transform: scaleX(-1); }
+#corner-bl { bottom: 0; left: 0; transform: scaleY(-1); }
+#corner-br { bottom: 0; right: 0; transform: scale(-1); }
+
+/* Horizontal rule decorations */
+.h-rule {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(0,212,255,0.3), transparent);
+  margin: 4px 0;
+}
+
+/* Pulsing circle indicator */
+.pulse-ring {
+  position: relative;
+  width: 8px; height: 8px;
+}
+.pulse-ring::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px; height: 8px;
+  background: var(--neon-cyan);
+  border-radius: 50%;
+}
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
+  border: 1px solid var(--neon-cyan);
+  border-radius: 50%;
+  animation: pulse-ring 2s ease-out infinite;
+  opacity: 0;
+}
+@keyframes pulse-ring {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- THREE.JS CANVAS -->
+<canvas id="three-canvas"></canvas>
+
+<!-- VISUAL OVERLAYS -->
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<!-- CORNER DECORATIONS -->
+<div class="corner-deco" id="corner-tl">
+  <svg viewBox="0 0 60 60" fill="none">
+    <path d="M2 58 L2 2 L58 2" stroke="rgba(0,212,255,0.5)" stroke-width="1.5"/>
+    <path d="M2 30 L15 30" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <path d="M30 2 L30 15" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <circle cx="2" cy="2" r="3" fill="rgba(0,212,255,0.8)"/>
+  </svg>
+</div>
+<div class="corner-deco" id="corner-tr">
+  <svg viewBox="0 0 60 60" fill="none">
+    <path d="M2 58 L2 2 L58 2" stroke="rgba(0,212,255,0.5)" stroke-width="1.5"/>
+    <path d="M2 30 L15 30" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <path d="M30 2 L30 15" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <circle cx="2" cy="2" r="3" fill="rgba(0,212,255,0.8)"/>
+  </svg>
+</div>
+<div class="corner-deco" id="corner-bl">
+  <svg viewBox="0 0 60 60" fill="none">
+    <path d="M2 58 L2 2 L58 2" stroke="rgba(0,212,255,0.5)" stroke-width="1.5"/>
+    <path d="M2 30 L15 30" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <path d="M30 2 L30 15" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <circle cx="2" cy="2" r="3" fill="rgba(0,212,255,0.8)"/>
+  </svg>
+</div>
+<div class="corner-deco" id="corner-br">
+  <svg viewBox="0 0 60 60" fill="none">
+    <path d="M2 58 L2 2 L58 2" stroke="rgba(0,212,255,0.5)" stroke-width="1.5"/>
+    <path d="M2 30 L15 30" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <path d="M30 2 L30 15" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
+    <circle cx="2" cy="2" r="3" fill="rgba(0,212,255,0.8)"/>
+  </svg>
+</div>
+
+<!-- MAIN UI -->
+<div id="ui-layer">
+  <!-- HEADER -->
+  <div id="header">
+    <div class="header-logo">
+      <div class="logo-title">THE TIME CODE</div>
+      <div class="logo-sub">TEMPORAL NAVIGATION SYSTEM v4.7.2</div>
+    </div>
+    <div class="header-status">
+      <div class="status-row"><div class="status-dot"></div> QUANTUM CORE: ONLINE</div>
+      <div class="status-row"><div class="status-dot orange"></div> FLUX CAPACITOR: CHARGING</div>
+      <div class="status-row" id="clock-row"><div class="status-dot"></div> <span id="sys-clock">--:--:-- UTC</span></div>
+    </div>
+  </div>
+
+  <!-- LEFT DATA PANEL -->
+  <div class="side-panel" id="left-panel">
+    <div class="data-card">
+      <div class="card-label">Temporal Flux</div>
+      <div class="card-value" id="flux-val">1.21 GW</div>
+      <div class="card-bar"><div class="card-bar-fill" style="--w:72%"></div></div>
+    </div>
+    <div class="data-card">
+      <div class="card-label">Quantum State</div>
+      <div class="card-value" id="quantum-val">STABLE</div>
+      <div class="mini-chart" id="mini-chart-1"></div>
+    </div>
+    <div class="data-card">
+      <div class="card-label">Paradox Risk</div>
+      <div class="card-value" style="color: #ff8c00; text-shadow: 0 0 10px rgba(255,140,0,0.8)">0.003%</div>
+      <div class="card-bar"><div class="card-bar-fill" style="width:2% !important; background: #ff8c00;"></div></div>
+    </div>
+    <div class="data-card">
+      <div class="card-label">Timeline Integrity</div>
+      <div class="card-value">99.97%</div>
+      <div class="mini-chart" id="mini-chart-2"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT DATA PANEL -->
+  <div class="side-panel" id="right-panel">
+    <div class="data-card">
+      <div class="card-label">Space-Time Coord</div>
+      <div class="card-value" id="coord-val" style="font-size:10px">Ω-7.4, τ+2.1</div>
+      <div class="h-rule"></div>
+    </div>
+    <div class="data-card">
+      <div class="card-label">Chrono Calibration</div>
+      <div class="card-value">LOCKED</div>
+      <div class="card-bar"><div class="card-bar-fill" style="width:100% !important;"></div></div>
+    </div>
+    <div class="data-card">
+      <div class="card-label">Energy Reserve</div>
+      <div class="card-value" id="energy-val">87.3%</div>
+      <div class="mini-chart" id="mini-chart-3"></div>
+    </div>
+    <div class="data-card">
+      <div class="card-label">Destination Δt</div>
+      <div class="card-value" id="delta-t">--- DAYS</div>
+    </div>
+  </div>
+
+  <!-- CENTER PANEL -->
+  <div id="center-panel">
+    <div class="panel-frame">
+      <div class="panel-title">Temporal Destination</div>
+      <div class="time-input-container">
+        <div class="input-row">
+          <div class="input-group">
+            <div class="input-label">◈ Target Date</div>
+            <input class="time-input" type="date" id="date-input">
+          </div>
+          <div class="input-group">
+            <div class="input-label">◈ Target Time</div>
+            <input class="time-input" type="time" id="time-input" value="00:00">
+          </div>
+        </div>
+        <div class="coord-display">
+          <span id="coord-display-text">SELECT DESTINATION TO CALCULATE COORDINATES</span>
+        </div>
+        <div class="era-selector">
+          <button class="era-btn" data-era="ancient">Ancient</button>
+          <button class="era-btn" data-era="medieval">Medieval</button>
+          <button class="era-btn active" data-era="present">Present</button>
+          <button class="era-btn" data-era="future">Future</button>
+          <button class="era-btn" data-era="far-future">Far Future</button>
+        </div>
+      </div>
+    </div>
+
+    <button id="launch-btn" onclick="initTimeTravelSequence()">
+      ⬡ START TIME TRAVEL ⬡
+    </button>
+
+    <!-- LAUNCH PROGRESS BAR -->
+    <div id="launch-progress-wrap">
+      <div class="launch-progress-labels">
+        <span id="launch-progress-label">TEMPORAL DRIVE CHARGING</span>
+        <span id="launch-progress-pct">0%</span>
+      </div>
+      <div id="launch-progress-track">
+        <div id="launch-progress-fill"></div>
+      </div>
+      <div id="launch-status-text">STANDBY</div>
+    </div>
+  </div>
+
+  <!-- BOTTOM TIMELINE -->
+  <div id="timeline-bar">
+    <div class="timeline-markers">
+      <span>10,000 BC</span>
+      <span>500 AD</span>
+      <span>1500</span>
+      <span>1900</span>
+      <span>NOW</span>
+      <span>2100</span>
+      <span>3000</span>
+      <span>∞</span>
+    </div>
+    <div class="timeline-track">
+      <div class="timeline-fill" id="timeline-fill"></div>
+      <div class="timeline-cursor" id="timeline-cursor" style="left: 62.5%"></div>
+    </div>
+  </div>
+</div>
+
+<!-- WARP OVERLAY -->
+<div id="warp-overlay">
+  <canvas id="warp-canvas"></canvas>
+  <div class="warp-text">
+    <div class="warp-title" id="warp-title">INITIATING TEMPORAL JUMP</div>
+    <div class="warp-coords" id="warp-coords">CALCULATING SPACE-TIME COORDINATES...</div>
+    <div class="warp-progress"><div class="warp-progress-fill" id="warp-fill"></div></div>
+  </div>
+</div>
+
+<!-- ARRIVAL PANEL -->
+<div id="arrival-panel">
+  <div class="arrival-era" id="arr-era">—</div>
+  <div class="arrival-date" id="arr-date">DATE: —</div>
+  <div class="h-rule"></div>
+  <div class="arrival-desc" id="arr-desc">Temporal coordinates locked. You have arrived at your destination.</div>
+  <div class="arrival-stats">
+    <div class="stat-item">
+      <div class="stat-val" id="arr-years">—</div>
+      <div class="stat-lbl">Years Traveled</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val" id="arr-energy">—</div>
+      <div class="stat-lbl">Energy Used</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val" id="arr-risk">—</div>
+      <div class="stat-lbl">Paradox Index</div>
+    </div>
+  </div>
+  <button class="return-btn" onclick="returnToBase()">◄ RETURN TO PRESENT</button>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =============================================
+   THE TIME CODE — Main JavaScript
+   Cinematic Sci-Fi Time Machine Interface
+   ============================================= */
+
+// ── State ────────────────────────────────────
+const STATE = {
+  traveling: false,
+  arrived: false,
+  audioCtx: null,
+  animId: null
+};
+
+// ── Utility ──────────────────────────────────
+const $ = id => document.getElementById(id);
+function showToast(msg, duration = 3000) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ── System Clock ─────────────────────────────
+function updateClock() {
+  const now = new Date();
+  $('sys-clock').textContent = now.toUTCString().split(' ')[4] + ' UTC';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Initialize default date input ────────────
+(function initDate() {
+  const now = new Date();
+  $('date-input').value = now.toISOString().split('T')[0];
+  $('time-input').value = '12:00';
+  updateDeltaT();
+})();
+
+// ── Delta T Calculator ────────────────────────
+function updateDeltaT() {
+  const dateVal = $('date-input').value;
+  const timeVal = $('time-input').value;
+  if (!dateVal) return;
+  const target = new Date(dateVal + 'T' + (timeVal || '00:00'));
+  const now = new Date();
+  const diff = Math.abs(target - now);
+  const days = Math.floor(diff / 86400000);
+  const years = (diff / 31536000000).toFixed(2);
+  $('delta-t').textContent = days > 365 ? years + ' YRS' : days + ' DAYS';
+
+  // Update coord display
+  const lon = ((target.getFullYear() % 360) - 180).toFixed(2);
+  const lat = ((target.getMonth() * 15) - 90).toFixed(2);
+  $('coord-display-text').textContent = `α: ${lon}° β: ${lat}° Δt: ${days}d / ${(diff/3600000).toFixed(1)}h`;
+
+  // Update timeline position
+  const minYear = -10000, maxYear = 3000, targetYear = target.getFullYear();
+  const pos = Math.max(0, Math.min(100, (targetYear - minYear) / (maxYear - minYear) * 100));
+  $('timeline-fill').style.width = pos + '%';
+  $('timeline-cursor').style.left = pos + '%';
+}
+
+$('date-input').addEventListener('input', updateDeltaT);
+$('time-input').addEventListener('input', updateDeltaT);
+
+// ── Era Buttons ───────────────────────────────
+const ERA_DATES = {
+  'ancient':    { date: '-3000-01-01', time: '00:00' },
+  'medieval':   { date: '1200-06-15', time: '12:00' },
+  'present':    { date: new Date().toISOString().split('T')[0], time: '12:00' },
+  'future':     { date: '2150-03-22', time: '08:30' },
+  'far-future': { date: '3000-12-31', time: '23:59' }
+};
+document.querySelectorAll('.era-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.era-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const era = btn.dataset.era;
+    const d = ERA_DATES[era];
+    try { $('date-input').value = d.date; } catch(e) {}
+    $('time-input').value = d.time;
+    updateDeltaT();
+    showToast('◈ ERA PRESET: ' + era.toUpperCase().replace('-', ' '));
+  });
+});
+
+// ── Animated data cards ───────────────────────
+(function buildMiniCharts() {
+  ['mini-chart-1','mini-chart-2','mini-chart-3'].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    for (let i = 0; i < 8; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'mini-bar';
+      bar.style.height = (20 + Math.random() * 80) + '%';
+      bar.style.setProperty('--delay', (0.5 + Math.random() * 2) + 's');
+      el.appendChild(bar);
+    }
+  });
+})();
+
+// Fluctuate flux value
+setInterval(() => {
+  const flux = (1.18 + Math.random() * 0.06).toFixed(2);
+  $('flux-val').textContent = flux + ' GW';
+  const energy = (85 + Math.random() * 5).toFixed(1);
+  $('energy-val').textContent = energy + '%';
+  // Randomly glitch quantum state
+  if (Math.random() < 0.05) {
+    $('quantum-val').textContent = 'FLUCTUATING';
+    setTimeout(() => $('quantum-val').textContent = 'STABLE', 800);
+  }
+}, 2000);
+
+// Animate coord
+setInterval(() => {
+  const x = (Math.random() * 14 - 7).toFixed(1);
+  const y = (Math.random() * 4 - 2).toFixed(1);
+  $('coord-val').textContent = `Ω${x}, τ+${y}`;
+}, 3000);
+
+// ── CSS Particles ─────────────────────────────
+(function spawnParticles() {
+  const colors = ['rgba(0,212,255,0.6)', 'rgba(139,0,255,0.4)', 'rgba(0,255,234,0.5)', 'rgba(0,80,255,0.3)'];
+  for (let i = 0; i < 20; i++) {
+    const p = document.createElement('div');
+    p.className = 'css-particle';
+    const size = 1 + Math.random() * 3;
+    p.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      animation-duration:${6 + Math.random()*12}s;
+      animation-delay:${Math.random()*8}s;
+      box-shadow: 0 0 ${size*3}px currentColor;
+    `;
+    document.body.appendChild(p);
+  }
+})();
+
+// ── Audio Engine ──────────────────────────────
+function getAudioCtx() {
+  if (!STATE.audioCtx) STATE.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return STATE.audioCtx;
+}
+
+function playHum(frequency = 60, duration = 3, gain = 0.05) {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(gain, ctx.currentTime + 0.3);
+    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+
+function playWarpSound() {
+  try {
+    const ctx = getAudioCtx();
+    // Base hum
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.connect(gain1); gain1.connect(ctx.destination);
+    osc1.frequency.setValueAtTime(55, ctx.currentTime);
+    osc1.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 3);
+    gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain1.gain.linearRampToValueAtTime(0, ctx.currentTime + 3);
+    osc1.start(); osc1.stop(ctx.currentTime + 3);
+
+    // High whine
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sawtooth';
+    osc2.connect(gain2); gain2.connect(ctx.destination);
+    osc2.frequency.setValueAtTime(440, ctx.currentTime + 0.5);
+    osc2.frequency.exponentialRampToValueAtTime(2200, ctx.currentTime + 3);
+    gain2.gain.setValueAtTime(0, ctx.currentTime);
+    gain2.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 1);
+    gain2.gain.linearRampToValueAtTime(0, ctx.currentTime + 3);
+    osc2.start(); osc2.stop(ctx.currentTime + 3);
+
+    // BOOM
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ctx.createBufferSource();
+    const gainB = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass'; filter.frequency.value = 200;
+    src.buffer = buf;
+    src.connect(filter); filter.connect(gainB); gainB.connect(ctx.destination);
+    gainB.gain.setValueAtTime(0.5, ctx.currentTime + 2.5);
+    src.start(ctx.currentTime + 2.5);
+  } catch(e) {}
+}
+
+function playArrivalSound() {
+  try {
+    const ctx = getAudioCtx();
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.connect(g); g.connect(ctx.destination);
+      osc.frequency.value = f;
+      const t = ctx.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.05);
+      g.gain.linearRampToValueAtTime(0, t + 0.4);
+      osc.start(t); osc.stop(t + 0.5);
+    });
+  } catch(e) {}
+}
+
+// ── THREE.JS Background Scene ─────────────────
+(function initThreeScene() {
+  const canvas = $('three-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x010408, 1);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera.position.set(0, 0, 60);
+
+  // ── STAR FIELD ──
+  const starsGeo = new THREE.BufferGeometry();
+  const starCount = 3000;
+  const starPos = new Float32Array(starCount * 3);
+  const starSizes = new Float32Array(starCount);
+  for (let i = 0; i < starCount; i++) {
+    starPos[i*3]   = (Math.random() - 0.5) * 800;
+    starPos[i*3+1] = (Math.random() - 0.5) * 800;
+    starPos[i*3+2] = (Math.random() - 0.5) * 400 - 200;
+    starSizes[i] = Math.random() * 2 + 0.5;
+  }
+  starsGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  starsGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+  const starsMat = new THREE.PointsMaterial({ color: 0x8cb8ff, size: 0.8, transparent: true, opacity: 0.8, sizeAttenuation: true });
+  scene.add(new THREE.Points(starsGeo, starsMat));
+
+  // ── GRID PLANE ──
+  const gridHelper = new THREE.GridHelper(300, 40, 0x001a4d, 0x000d2b);
+  gridHelper.position.y = -40;
+  gridHelper.rotation.x = Math.PI * 0.04;
+  scene.add(gridHelper);
+
+  // ── FLOATING RINGS ──
+  const rings = [];
+  for (let i = 0; i < 6; i++) {
+    const geo = new THREE.TorusGeometry(8 + i * 4, 0.05 + Math.random() * 0.08, 8, 80);
+    const mat = new THREE.MeshBasicMaterial({
+      color: i % 2 === 0 ? 0x0088ff : 0x6600ff,
+      transparent: true,
+      opacity: 0.15 + Math.random() * 0.15
+    });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.rotation.x = Math.PI * (0.3 + Math.random() * 0.4);
+    ring.rotation.y = Math.random() * Math.PI;
+    ring.position.z = -20 - i * 8;
+    ring.userData = { speed: (0.001 + Math.random() * 0.002) * (Math.random() < 0.5 ? 1 : -1), phase: Math.random() * Math.PI * 2 };
+    scene.add(ring);
+    rings.push(ring);
+  }
+
+  // ── FLOATING ICOSAHEDRA ──
+  const floaters = [];
+  for (let i = 0; i < 12; i++) {
+    const geo = new THREE.IcosahedronGeometry(0.5 + Math.random() * 1.5, 0);
+    const mat = new THREE.MeshBasicMaterial({
+      color: Math.random() < 0.5 ? 0x003399 : 0x220066,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.25 + Math.random() * 0.25
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(
+      (Math.random() - 0.5) * 80,
+      (Math.random() - 0.5) * 40,
+      -10 - Math.random() * 40
+    );
+    mesh.userData = {
+      rotX: (Math.random() - 0.5) * 0.008,
+      rotY: (Math.random() - 0.5) * 0.012,
+      floatY: Math.random() * Math.PI * 2,
+      floatSpeed: 0.003 + Math.random() * 0.005
+    };
+    scene.add(mesh);
+    floaters.push(mesh);
+  }
+
+  // ── CENTRAL ENERGY SPHERE ──
+  const sphereGeo = new THREE.IcosahedronGeometry(6, 3);
+  const sphereMat = new THREE.MeshBasicMaterial({
+    color: 0x0044aa,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.12
+  });
+  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  sphere.position.z = -30;
+  scene.add(sphere);
+
+  // inner glow sphere
+  const innerGeo = new THREE.SphereGeometry(4, 32, 32);
+  const innerMat = new THREE.MeshBasicMaterial({
+    color: 0x001133,
+    transparent: true,
+    opacity: 0.6
+  });
+  const innerSphere = new THREE.Mesh(innerGeo, innerMat);
+  innerSphere.position.z = -30;
+  scene.add(innerSphere);
+
+  // ── PARTICLE FIELD ──
+  const particleCount = 1500;
+  const pGeo = new THREE.BufferGeometry();
+  const pPos = new Float32Array(particleCount * 3);
+  const pVel = new Float32Array(particleCount * 3);
+  for (let i = 0; i < particleCount; i++) {
+    pPos[i*3]   = (Math.random() - 0.5) * 200;
+    pPos[i*3+1] = (Math.random() - 0.5) * 100;
+    pPos[i*3+2] = (Math.random() - 0.5) * 100 - 30;
+    pVel[i*3]   = (Math.random() - 0.5) * 0.02;
+    pVel[i*3+1] = (Math.random() - 0.5) * 0.02;
+    pVel[i*3+2] = (Math.random() - 0.5) * 0.005;
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  const pMat = new THREE.PointsMaterial({ color: 0x00aaff, size: 0.3, transparent: true, opacity: 0.5 });
+  const particles = new THREE.Points(pGeo, pMat);
+  scene.add(particles);
+
+  // ── LIGHT STREAKS (lines) ──
+  const streaks = [];
+  for (let i = 0; i < 20; i++) {
+    const startX = (Math.random() - 0.5) * 100;
+    const startY = (Math.random() - 0.5) * 60;
+    const startZ = -10 - Math.random() * 50;
+    const length = 2 + Math.random() * 10;
+    const pts = [
+      new THREE.Vector3(startX, startY, startZ),
+      new THREE.Vector3(startX + (Math.random()-0.5)*2, startY + (Math.random()-0.5)*2, startZ - length)
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({
+      color: Math.random() < 0.5 ? 0x0066ff : 0x8800ff,
+      transparent: true,
+      opacity: 0.1 + Math.random() * 0.2
+    });
+    const streak = new THREE.Line(geo, mat);
+    streak.userData = { baseOpacity: mat.opacity, phase: Math.random() * Math.PI * 2 };
+    scene.add(streak);
+    streaks.push(streak);
+  }
+
+  // ── Mouse Interaction ──
+  let mouseX = 0, mouseY = 0;
+  document.addEventListener('mousemove', e => {
+    mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+    mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+
+  // ── Resize ──
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ── Animation loop ──
+  let t = 0;
+  let warpMode = false;
+  let warpIntensity = 0;
+  STATE.setWarpMode = (on) => { warpMode = on; };
+  STATE.getWarpIntensity = () => warpIntensity;
+  STATE.setWarpIntensity = (v) => { warpIntensity = v; };
+
+  function animate() {
+    STATE.animId = requestAnimationFrame(animate);
+    t += 0.01;
+
+    // Camera drift
+    camera.position.x += (mouseX * 5 - camera.position.x) * 0.02;
+    camera.position.y += (-mouseY * 3 - camera.position.y) * 0.02;
+    camera.lookAt(0, 0, 0);
+
+    // Rotate rings
+    rings.forEach(r => {
+      r.rotation.z += r.userData.speed;
+      r.material.opacity = 0.1 + Math.sin(t + r.userData.phase) * 0.08;
+    });
+
+    // Float icosahedra
+    floaters.forEach(f => {
+      f.rotation.x += f.userData.rotX;
+      f.rotation.y += f.userData.rotY;
+      f.position.y += Math.sin(t * f.userData.floatSpeed + f.userData.floatY) * 0.02;
+    });
+
+    // Rotate sphere
+    sphere.rotation.x += 0.003;
+    sphere.rotation.y += 0.004;
+
+    // Animate particles
+    const positions = pGeo.attributes.position.array;
+    for (let i = 0; i < particleCount; i++) {
+      positions[i*3]   += pVel[i*3];
+      positions[i*3+1] += pVel[i*3+1];
+      // wrap
+      if (Math.abs(positions[i*3]) > 100) pVel[i*3] *= -1;
+      if (Math.abs(positions[i*3+1]) > 50) pVel[i*3+1] *= -1;
+    }
+    pGeo.attributes.position.needsUpdate = true;
+
+    // Streak flicker
+    streaks.forEach(s => {
+      s.material.opacity = s.userData.baseOpacity * (0.5 + Math.sin(t * 3 + s.userData.phase) * 0.5);
+    });
+
+    // Warp mode
+    if (warpMode) {
+      warpIntensity = Math.min(warpIntensity + 0.02, 1);
+      // Stretch particles toward center
+      for (let i = 0; i < particleCount; i++) {
+        positions[i*3]   *= (1 - warpIntensity * 0.02);
+        positions[i*3+1] *= (1 - warpIntensity * 0.02);
+        positions[i*3+2] -= warpIntensity * 0.5;
+        if (positions[i*3+2] < -100) positions[i*3+2] = 0;
+      }
+      camera.fov = 70 + warpIntensity * 40;
+      camera.updateProjectionMatrix();
+      sphere.material.opacity = 0.12 + warpIntensity * 0.3;
+    } else {
+      warpIntensity *= 0.95;
+      camera.fov += (70 - camera.fov) * 0.05;
+      camera.updateProjectionMatrix();
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+
+// ── Warp Canvas (tunnel effect) ───────────────
+(function initWarpCanvas() {
+  const canvas = $('warp-canvas');
+  const ctx = canvas.getContext('2d');
+  let running = false;
+  let frame = 0;
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const TUNNEL_LINES = 200;
+
+  function drawTunnel() {
+    if (!running) return;
+    frame++;
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2, cy = H / 2;
+
+    ctx.fillStyle = 'rgba(1,2,8,0.15)';
+    ctx.fillRect(0, 0, W, H);
+
+    const speed = frame * 3;
+    for (let i = 0; i < TUNNEL_LINES; i++) {
+      const angle = (i / TUNNEL_LINES) * Math.PI * 2 + frame * 0.002;
+      const r = ((i * 4 + speed) % 600) + 10;
+      const x = cx + Math.cos(angle) * r * 1.6;
+      const y = cy + Math.sin(angle) * r;
+      const alpha = Math.min(1, (600 - r) / 600) * 0.7;
+      const hue = (frame * 0.5 + i * 1.5) % 360;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = `hsla(${hue}, 100%, 60%, ${alpha * 0.3})`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Central glow
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, 200);
+    grd.addColorStop(0, `rgba(0, 200, 255, ${0.05 + Math.sin(frame * 0.05) * 0.03})`);
+    grd.addColorStop(0.5, 'rgba(100, 0, 255, 0.02)');
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+
+    requestAnimationFrame(drawTunnel);
+  }
+
+  STATE.startWarpCanvas = () => { running = true; frame = 0; drawTunnel(); };
+  STATE.stopWarpCanvas = () => { running = false; ctx.clearRect(0, 0, canvas.width, canvas.height); };
+})();
+
+// ── Time Travel Sequence ──────────────────────
+function initTimeTravelSequence() {
+  if (STATE.traveling) return;
+
+  const dateVal = $('date-input').value;
+  if (!dateVal) {
+    showToast('⚠ NO DESTINATION ENTERED — SET TARGET DATE');
+    $('date-input').style.borderColor = '#ff003c';
+    setTimeout(() => $('date-input').style.borderColor = '', 2000);
+    return;
+  }
+
+  STATE.traveling = true;
+
+  // ── Pre-calculate the paradox value that will show in the arrival panel
+  //    so we can animate it live on the left panel from the moment the button fires
+  const finalParadoxValue = (Math.random() * 0.05).toFixed(4) + '%';
+  STATE.pendingParadox = finalParadoxValue;
+
+  const btn = $('launch-btn');
+  btn.classList.add('charging');
+  btn.textContent = '◈ CHARGING TEMPORAL DRIVE...';
+  showToast('◈ TEMPORAL SEQUENCE INITIATED');
+  playHum(80, 2, 0.06);
+
+  // ── Animate paradox index on the left panel immediately ──
+  animateParadoxIndex(finalParadoxValue);
+
+  // ── Show & drive loading bar ──
+  startLaunchProgressBar();
+
+  // Trigger 3JS warp
+  STATE.setWarpMode(true);
+
+  // Phase 1: charge up (1.5s)
+  setTimeout(() => {
+    playWarpSound();
+    btn.textContent = '⚡ ENGAGING WARP DRIVE...';
+    document.body.classList.add('glitch');
+    setTimeout(() => document.body.classList.remove('glitch'), 400);
+  }, 800);
+
+  // Phase 2: show warp overlay (2.5s)
+  setTimeout(() => {
+    showWarpOverlay(dateVal, $('time-input').value || '00:00');
+  }, 1500);
+}
+
+// ── Animate the left-panel Paradox Risk card live ──────────────
+function animateParadoxIndex(targetValue) {
+  // targetValue is like "0.0312%" — parse the float
+  const target = parseFloat(targetValue);
+  const el = document.querySelector('#left-panel .data-card:nth-child(3) .card-value');
+  const barFill = document.querySelector('#left-panel .data-card:nth-child(3) .card-bar-fill');
+  if (!el) return;
+
+  // Flash the card border to signal it's computing
+  const card = document.querySelector('#left-panel .data-card:nth-child(3)');
+  card.style.borderColor = 'rgba(255, 140, 0, 0.7)';
+  card.style.boxShadow = '0 0 20px rgba(255,140,0,0.4)';
+
+  // Determine color based on risk level
+  let color, glowColor;
+  if (target < 0.01) {
+    color = '#00ffea'; glowColor = 'rgba(0,255,234,0.8)';
+  } else if (target < 0.03) {
+    color = '#ff8c00'; glowColor = 'rgba(255,140,0,0.8)';
+  } else {
+    color = '#ff003c'; glowColor = 'rgba(255,0,60,0.8)';
+  }
+
+  // Animate the number climbing/settling to final value over ~2.5s
+  const steps = 40;
+  const duration = 2500;
+  const interval = duration / steps;
+  let step = 0;
+
+  const timer = setInterval(() => {
+    step++;
+    let current;
+    if (step < steps * 0.7) {
+      // Chaotic scanning phase — random flicker
+      current = (Math.random() * 0.12).toFixed(4);
+      el.style.color = '#ff8c00';
+      el.style.textShadow = '0 0 10px rgba(255,140,0,0.9)';
+      if (barFill) {
+        barFill.style.width = (Math.random() * 60 + 20) + '%';
+        barFill.style.background = '#ff8c00';
+        barFill.style.animation = 'none';
+      }
+    } else {
+      // Settling phase — converge toward final value
+      const t = (step - steps * 0.7) / (steps * 0.3);
+      const noise = (1 - t) * (Math.random() * 0.02 - 0.01);
+      current = Math.max(0, target + noise).toFixed(4);
+      el.style.color = color;
+      el.style.textShadow = `0 0 10px ${glowColor}`;
+      if (barFill) {
+        barFill.style.width = (target / 0.05 * 30 + 2) + '%';
+        barFill.style.background = color;
+      }
+    }
+
+    if (step >= steps) {
+      // Lock in the final value
+      el.textContent = target.toFixed(4) + '%';
+      el.style.color = color;
+      el.style.textShadow = `0 0 10px ${glowColor}, 0 0 20px ${glowColor}`;
+      card.style.borderColor = color.replace(')', ', 0.5)').replace('rgb', 'rgba');
+      card.style.boxShadow = `0 0 15px ${glowColor}`;
+      if (barFill) {
+        barFill.style.width = (target / 0.05 * 30 + 2) + '%';
+        barFill.style.background = color;
+        barFill.style.animation = 'none';
+      }
+      clearInterval(timer);
+    } else {
+      el.textContent = current + '%';
+    }
+  }, interval);
+}
+
+// ── Launch Progress Bar controller ────────────────────────────
+function startLaunchProgressBar() {
+  const wrap = $('launch-progress-wrap');
+  const fill = $('launch-progress-fill');
+  const pct  = $('launch-progress-pct');
+  const lbl  = $('launch-progress-label');
+  const status = $('launch-status-text');
+
+  // Show bar
+  wrap.classList.add('visible');
+  fill.className = 'launch-progress-fill'; // reset classes
+  fill.style.width = '0%';
+  pct.textContent = '0%';
+
+  const stages = [
+    { at: 0,   label: 'TEMPORAL DRIVE CHARGING',        statusMsg: 'INITIALIZING QUANTUM CORE...',         danger: false },
+    { at: 15,  label: 'FLUX CAPACITOR ENGAGING',        statusMsg: 'FLUX RESONANCE: BUILDING...',          danger: false },
+    { at: 30,  label: 'SPACE-TIME LOCK ACQUIRING',      statusMsg: 'CALCULATING COORDINATES...',           danger: false },
+    { at: 50,  label: 'PARADOX FILTERS BYPASSING',      statusMsg: 'BYPASSING TEMPORAL SAFETY LOCKS...',   danger: true  },
+    { at: 65,  label: 'WARP DRIVE ENGAGING',            statusMsg: 'CHRONO ENGINE AT 88% CAPACITY...',     danger: true  },
+    { at: 80,  label: 'TEMPORAL TUNNEL FORMING',        statusMsg: 'SPACE-TIME FABRIC BENDING...',         danger: true  },
+    { at: 95,  label: 'JUMP SEQUENCE INITIATED',        statusMsg: 'HOLD ON — INITIATING TEMPORAL JUMP',   danger: true  },
+    { at: 100, label: 'WARP COMPLETE',                  statusMsg: 'DESTINATION REACHED',                  danger: false },
+  ];
+
+  // Total time before warp overlay appears: ~1500ms charge + ~2700ms warp = ~4200ms
+  // We'll animate the bar over that full duration
+  const totalDuration = 4200;
+  const startTime = Date.now();
+  let stageIdx = 0;
+
+  function tick() {
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(100, (elapsed / totalDuration) * 100);
+
+    fill.style.width = progress + '%';
+    pct.textContent = Math.floor(progress) + '%';
+
+    // Update stage labels
+    for (let i = stages.length - 1; i >= 0; i--) {
+      if (progress >= stages[i].at) {
+        if (stageIdx !== i) {
+          stageIdx = i;
+          lbl.textContent = stages[i].label;
+          status.textContent = stages[i].statusMsg;
+          if (stages[i].danger) {
+            fill.classList.add('danger');
+            fill.classList.remove('complete');
+            pct.style.color = '#ff8c00';
+            status.style.color = '#ff8c00';
+          } else if (progress >= 100) {
+            fill.classList.remove('danger');
+            fill.classList.add('complete');
+            pct.style.color = 'var(--neon-cyan)';
+            status.style.color = 'var(--neon-cyan)';
+          } else {
+            fill.classList.remove('danger', 'complete');
+            pct.style.color = 'var(--neon-cyan)';
+            status.style.color = 'var(--text-dim)';
+          }
+        }
+        break;
+      }
+    }
+
+    if (progress < 100) {
+      requestAnimationFrame(tick);
+    } else {
+      // Hold complete state briefly, then hide bar
+      fill.classList.remove('danger');
+      fill.classList.add('complete');
+      pct.textContent = '100%';
+      pct.style.color = 'var(--neon-cyan)';
+      status.textContent = 'JUMP SEQUENCE COMPLETE';
+      setTimeout(() => {
+        wrap.classList.remove('visible');
+        // Reset for next use
+        setTimeout(() => {
+          fill.style.width = '0%';
+          fill.className = 'launch-progress-fill';
+          pct.textContent = '0%';
+          pct.style.color = 'var(--neon-cyan)';
+          status.textContent = 'STANDBY';
+          status.style.color = '';
+          lbl.textContent = 'TEMPORAL DRIVE CHARGING';
+        }, 500);
+      }, 1200);
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+function showWarpOverlay(dateVal, timeVal) {
+  const overlay = $('warp-overlay');
+  overlay.classList.add('active');
+  STATE.startWarpCanvas();
+
+  const target = new Date(dateVal + 'T' + timeVal);
+  const year = target.getFullYear();
+
+  // Randomize coordinate text
+  let phase = 0;
+  const phases = [
+    'CALCULATING SPACE-TIME COORDINATES...',
+    'QUANTUM ENTANGLEMENT LOCKED',
+    'BYPASSING TEMPORAL PARADOX FILTERS...',
+    'ENGAGING FLUX CAPACITOR ARRAY',
+    'BENDING LOCAL SPACE-TIME CONTINUUM...',
+    'DESTINATION COORDINATES CONFIRMED',
+    `LOCKING ON: YEAR ${year}...`,
+    'TEMPORAL JUMP IN PROGRESS...',
+  ];
+
+  const warpTitle = $('warp-title');
+  const warpCoords = $('warp-coords');
+  const warpFill = $('warp-fill');
+
+  function nextPhase() {
+    if (phase >= phases.length) return;
+    warpCoords.textContent = phases[phase];
+    warpFill.style.width = ((phase + 1) / phases.length * 100) + '%';
+    phase++;
+    if (phase < phases.length) setTimeout(nextPhase, 320 + Math.random() * 180);
+    else {
+      // Final jump
+      warpTitle.textContent = '✦ TEMPORAL JUMP COMPLETE ✦';
+      setTimeout(() => completeTimeTravel(dateVal, timeVal), 500);
+    }
+  }
+
+  setTimeout(nextPhase, 200);
+}
+
+function completeTimeTravel(dateVal, timeVal) {
+  STATE.setWarpMode(false);
+  playArrivalSound();
+
+  const overlay = $('warp-overlay');
+  overlay.classList.remove('active');
+  STATE.stopWarpCanvas();
+
+  const btn = $('launch-btn');
+  btn.classList.remove('charging');
+  btn.textContent = '⬡ START TIME TRAVEL ⬡';
+  STATE.traveling = false;
+
+  // Show arrival panel
+  const target = new Date(dateVal + 'T' + timeVal);
+  const year = target.getFullYear();
+  const now = new Date();
+  const diff = Math.abs(target - now);
+  const years = Math.floor(diff / 31536000000);
+
+  const eraInfo = getEraInfo(year);
+
+  $('arr-era').textContent = eraInfo.title;
+  $('arr-date').textContent = 'DATE: ' + target.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase();
+  $('arr-desc').textContent = eraInfo.desc;
+  $('arr-years').textContent = years.toLocaleString();
+  $('arr-energy').textContent = (45 + Math.random() * 40).toFixed(1) + '%';
+  // Use the pre-calculated paradox value that was already animated on the side panel
+  $('arr-risk').textContent = STATE.pendingParadox || (Math.random() * 0.05).toFixed(4) + '%';
+
+  const panel = $('arrival-panel');
+  panel.style.display = 'flex';
+  requestAnimationFrame(() => panel.classList.add('active'));
+
+  showToast('✦ ARRIVAL CONFIRMED — TEMPORAL LOCK STABLE');
+}
+
+function getEraInfo(year) {
+  if (year < -5000) return { title: 'PRIMORDIAL', desc: 'You have arrived in the primordial age. Civilizations have yet to rise. The air is clean and untouched. Megafauna roam the plains. The timeline here is fragile.' };
+  if (year < 0) return { title: 'ANCIENT WORLD', desc: 'You stand at the dawn of recorded history. Great empires rise and fall. The foundations of mathematics, philosophy, and architecture are being laid.' };
+  if (year < 500) return { title: 'CLASSICAL ERA', desc: 'A period of remarkable cultural and intellectual achievement. Rome at its height, or the Han Dynasty in the East. History pivots on small moments here.' };
+  if (year < 1000) return { title: 'EARLY MEDIEVAL', desc: 'The world reorganizes after classical collapse. Feudal structures emerge. The Islamic Golden Age flowers. Vikings navigate uncharted seas.' };
+  if (year < 1500) return { title: 'MEDIEVAL', desc: 'Gothic cathedrals pierce the sky. Crusades reshape the known world. The Black Death reshuffles civilization. Ideas begin to move faster.' };
+  if (year < 1800) return { title: 'AGE OF EXPLORATION', desc: 'The world grows connected and terrifying. Printing presses spread revolution. Empires span continents. Science begins to overturn ancient certainties.' };
+  if (year < 1950) return { title: 'INDUSTRIAL AGE', desc: 'Steam, steel, and electricity transform everything. Two global conflicts reshape the political order. The Atomic Age dawns with terrible beauty.' };
+  if (year < 2030) return { title: 'DIGITAL PRESENT', desc: 'You have returned to your origin point. The age of artificial intelligence and digital networks. Quantum computing and climate crisis define the era.' };
+  if (year < 2100) return { title: 'NEAR FUTURE', desc: 'Humanity stands at the crossroads. Climate engineering reshapes the atmosphere. Neural interfaces blur the line between mind and machine.' };
+  if (year < 2500) return { title: 'POST-DIGITAL ERA', desc: 'Quantum civilization has reorganized society. Consciousness uploading is commonplace. The Moon and Mars are inhabited. War has been nearly abolished.' };
+  if (year < 3000) return { title: 'THE LONG TOMORROW', desc: 'You have reached the far edge of reliable timeline data. Post-scarcity civilization spans the inner solar system. History has gone non-linear.' };
+  return { title: 'BEYOND THE VEIL', desc: 'You have exceeded all modeled timelines. The temporal navigation system cannot fully verify the integrity of this timeline. Proceed with extreme caution.' };
+}
+
+function returnToBase() {
+  const panel = $('arrival-panel');
+  panel.classList.remove('active');
+  setTimeout(() => panel.style.display = 'none', 500);
+
+  // Reset to present
+  const now = new Date();
+  $('date-input').value = now.toISOString().split('T')[0];
+  $('time-input').value = '12:00';
+  updateDeltaT();
+  document.querySelectorAll('.era-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-era="present"]').classList.add('active');
+
+  playHum(220, 1.5, 0.04);
+  showToast('◄ RETURNED TO PRESENT — WELCOME HOME');
+
+  // Reset paradox card back to baseline
+  STATE.pendingParadox = null;
+  const paradoxEl = document.querySelector('#left-panel .data-card:nth-child(3) .card-value');
+  const paradoxCard = document.querySelector('#left-panel .data-card:nth-child(3)');
+  const paradoxBar = document.querySelector('#left-panel .data-card:nth-child(3) .card-bar-fill');
+  if (paradoxEl) {
+    paradoxEl.textContent = '0.003%';
+    paradoxEl.style.color = '#ff8c00';
+    paradoxEl.style.textShadow = '0 0 10px rgba(255,140,0,0.8)';
+  }
+  if (paradoxCard) {
+    paradoxCard.style.borderColor = '';
+    paradoxCard.style.boxShadow = '';
+  }
+  if (paradoxBar) {
+    paradoxBar.style.width = '2%';
+    paradoxBar.style.background = '#ff8c00';
+    paradoxBar.style.animation = 'none';
+  }
+}
+
+// ── Boot sequence ─────────────────────────────
+(function bootSequence() {
+  const messages = [
+    '◈ TEMPORAL NAVIGATION SYSTEM INITIALIZED',
+    '◈ QUANTUM CORE ONLINE — 1.21 GW',
+    '◈ TIMELINE INTEGRITY: 99.97%',
+    '◈ PARADOX BUFFER LOADED',
+    '◈ AWAITING DESTINATION INPUT...',
+  ];
+  messages.forEach((msg, i) => {
+    setTimeout(() => showToast(msg, 1800), i * 900 + 300);
+  });
+
+  // Play ambient hum after interaction
+  document.addEventListener('click', () => playHum(40, 5, 0.02), { once: true });
+})();
+</script>
+</body>
+</html>
